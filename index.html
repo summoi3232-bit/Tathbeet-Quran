@@ -128,6 +128,34 @@ body{
 .qt-cnt-btn{width:30px; height:30px; border-radius:8px; border:1px solid var(--border); background:var(--surface3); color:var(--text); font-size:14px; line-height:1; cursor:pointer; font-family:'Tajawal',sans-serif; padding:0;}
 .qt-tm-val{min-width:52px; text-align:center; font-size:14px; font-weight:700; color:var(--text-faint); font-variant-numeric:tabular-nums; direction:ltr;}
 .qt-tm-val.run{color:var(--gold);}
+.qt-rp-cards{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.qt-rp-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center}
+.qt-rp-card b{display:block;font-size:20px;color:var(--gold)}
+.qt-rp-card small{font-size:11px;color:var(--text-muted)}
+.qt-rp-table{width:100%;border-collapse:collapse;font-size:12.5px;margin:6px 0 12px}
+.qt-rp-table th,.qt-rp-table td{border-bottom:1px solid var(--border);padding:6px 4px;text-align:center}
+.qt-rp-table td:first-child,.qt-rp-table th:first-child{text-align:right}
+.qt-rp-table th{color:var(--text-faint);font-weight:500;font-size:11px}
+.qt-rp-table small{color:var(--text-faint)}
+.qt-rp-table tr{break-inside:avoid}
+.qt-rp-bar{height:6px;background:var(--surface3);border-radius:3px;overflow:hidden;margin-top:3px}
+.qt-rp-bar i{display:block;height:100%}
+.qt-rp-an{background:var(--surface2);border-right:3px solid var(--gold);border-radius:8px;padding:10px 14px;margin:10px 0}
+.qt-rp-an ul{margin:0;padding-right:16px}
+.qt-rp-an li{font-size:13px;color:var(--text-muted);margin-bottom:4px}
+.qt-rp-strip{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 12px}
+.qt-rp-strip i{width:34px;height:30px;border-radius:6px;font-style:normal;font-size:11px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);color:var(--text-muted)}
+.qt-rp-strip .l1{background:#bfe3cf;color:#0d1f17}.qt-rp-strip .l2{background:#7fc6a0;color:#0d1f17}.qt-rp-strip .l3{background:#2f9e6b;color:#fff}
+.qt-rp-strip .x{opacity:.35}
+.qt-up{color:var(--good)}.qt-dn{color:var(--weak)}
+.qt-cycle-edit[disabled]{opacity:.4;pointer-events:none}
+.qt-rp-head{text-align:center;margin-bottom:10px}
+.qt-rp-head h2{font-family:'Amiri',serif;font-size:20px;margin:0}
+@media print{
+  #qt-print-view{--text:#111;--text-muted:#333;--text-faint:#555;--surface2:#fff;--surface3:#e6e6e6;--border:#999;--gold:#7a5f00;--good:#2f7d57;--weak:#a33;}
+  #qt-print-view *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  body{background:#fff !important;}
+}
 </style>
 </head>
 <body>
@@ -239,13 +267,16 @@ body{
   const INTERVALS = [1, 3, 7, 14, 30]; // days
   const STORAGE_KEY = 'thabat-al-hifz-state';
   const MS_DAY = 86400000;
-  const todayStr = () => new Date().toISOString().slice(0,10);
-  const addDays = (d, n) => { const dt = new Date(d); dt.setDate(dt.getDate()+n); return dt.toISOString().slice(0,10); };
+  const ymd = dt => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+  const todayStr = () => ymd(new Date());
+  const addDays = (d, n) => { const dt = new Date(d); dt.setDate(dt.getDate()+n); return ymd(dt); };
 
-  let state = { classification: {}, tathbit: {}, spaced: {}, wirdLog: {}, timers: {}, lastModes: {}, cycleStarts: {}, wirdMode: 'both' };
+  let state = { classification: {}, tathbit: {}, spaced: {}, wirdLog: {}, timers: {}, lastModes: {}, worked: {}, cycleStarts: {}, wirdMode: 'both' };
   let activeTab = "classify";
   let activeCycleDay = 0;   // 0-based *position within the active mode's day list* being viewed
   let editingCycleDate = false;
+  let reportType = 'd', reportDate = todayStr();
+  const WSTART = 0; // بداية الأسبوع في التقارير: 0 الأحد، 6 السبت، 1 الإثنين
 
   // موضع اليوم الحالي (0-based) ضمن دورة الوضع المحدد — طول الدورة هنا هو عدد أيام هذا الوضع فقط
   // (7 لوضع أسبوع واحد، 14 لوضع الأسبوعين معًا)، وتاريخ البداية خاص بكل وضع على حدة.
@@ -274,8 +305,10 @@ body{
     state.cycleStarts = state.cycleStarts || {};
     state.timers = state.timers || {};
     state.lastModes = state.lastModes || {};
+        state.worked = state.worked || {};
     if (!state.wirdMode || !WIRD_MODES[state.wirdMode]) state.wirdMode = 'both';
     Object.keys(WIRD_MODES).forEach(m => { if (!state.cycleStarts[m]) state.cycleStarts[m] = todayStr(); });
+    Object.keys(state.timers).forEach(d => { if (d < todayStr()) Object.values(state.timers[d]).forEach(x => { x.since = null; }); }); // مؤقّت منسي من يوم سابق
     activeCycleDay = currentCyclePos(state.wirdMode);
     saveState();
     render();
@@ -334,7 +367,7 @@ body{
     reader.onload = (e) => {
       try {
         const parsed = JSON.parse(e.target.result);
-        state = Object.assign({ classification: {}, tathbit: {}, spaced: {}, wirdLog: {}, timers: {}, lastModes: {}, cycleStarts: {}, wirdMode: 'both' }, parsed);
+        state = Object.assign({ classification: {}, tathbit: {}, spaced: {}, wirdLog: {}, timers: {}, lastModes: {}, worked: {}, cycleStarts: {}, wirdMode: 'both' }, parsed);
         if (typeof state.cycleStart === 'string') {
           state.cycleStarts = state.cycleStarts || {};
           if (!state.cycleStarts.both) state.cycleStarts.both = state.cycleStart;
@@ -343,6 +376,7 @@ body{
         state.cycleStarts = state.cycleStarts || {};
         state.timers = state.timers || {};
         state.lastModes = state.lastModes || {};
+        state.worked = state.worked || {};
         if (!state.wirdMode || !WIRD_MODES[state.wirdMode]) state.wirdMode = 'both';
         Object.keys(WIRD_MODES).forEach(m => { if (!state.cycleStarts[m]) state.cycleStarts[m] = todayStr(); });
         saveState();
@@ -364,7 +398,7 @@ body{
 
   function renderTabs(){
     const tabs = [
-      ["classify","التصنيف"], ["wird","الورد"], ["tathbit","التثبيت"], ["spaced","التكرار المتباعد"], ["about","المنهجية"]
+      ["classify","التصنيف"], ["wird","الورد"], ["reports","التقارير"], ["tathbit","التثبيت"], ["spaced","التكرار المتباعد"], ["about","المنهجية"]
     ];
     document.getElementById('qt-tabs').innerHTML = tabs.map(([k,l]) =>
       `<button class="qt-tab ${activeTab===k?'active':''}" data-tab="${k}">${l}</button>`
@@ -585,12 +619,147 @@ body{
       </div>`;
   }
 
+  // ===== التقارير =====
+  const WD = ['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+  const MN = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+  const pd = s => { const [a,b,c] = s.split('-').map(Number); return new Date(a,b-1,c); };
+  const sh = (s,n) => { const d = pd(s); d.setDate(d.getDate()+n); return ymd(d); };
+  const fmtD = s => { const d = pd(s); return `${ar(d.getDate())} ${MN[d.getMonth()]} ${ar(d.getFullYear())}`; };
+  const monthDates = (y,m) => range(1, new Date(y,m+1,0).getDate()).map(i => ymd(new Date(y,m,i)));
+  const pct = (a,b) => b ? Math.round(a/b*100) : null;
+  const P = v => v == null ? '—' : ar(v) + '٪';
+  const longest = a => { let m = 0, c = 0; a.forEach(x => { c = x ? c+1 : 0; m = Math.max(m,c); }); return m; };
+  const rate = p => p == null ? '' : p >= 85 ? 'ممتاز' : p >= 65 ? 'جيد' : p >= 40 ? 'متوسط' : 'يحتاج إلى مضاعفة العزم';
+  const dl = (c,p) => (p == null || c == null) ? '' : c > p ? '<b class="qt-up">▲</b>' : c < p ? '<b class="qt-dn">▼</b>' : '<b>＝</b>';
+  const bar = (v,mx) => `<div class="qt-rp-bar"><i style="width:${mx ? Math.round(v/mx*100) : 0}%;background:var(--gold)"></i></div>`;
+  const cards = c => `<div class="qt-rp-cards">${c.map(([v,l]) => `<div class="qt-rp-card"><b>${v}</b><small>${l}</small></div>`).join('')}</div>`;
+  const ul = o => `<div class="qt-rp-an"><ul>${o.map(x => `<li>${x}</li>`).join('')}</ul></div>`;
+  function fmtMin(ms){
+    if (ms <= 0) return '—';
+    if (ms < 60000) return ar(Math.round(ms/1000)) + ' ث';
+    const m = Math.round(ms/60000);
+    return m < 60 ? ar(m) + ' د' : ar(Math.floor(m/60)) + ' س' + (m%60 ? ' ' + ar(m%60) + ' د' : '');
+  }
+  function firstDay(){
+    return Object.keys(state.wirdLog).filter(d => Object.keys(state.wirdLog[d]).length)
+      .concat(Object.keys(state.timers)).sort()[0];
+  }
+  // إحصاءات يوم: السور المنجزة والمدة، و«الورد المقرَّر» = سور الأيام التي عملتَ عليها (يُسجَّل منذ هذا الإصدار)
+  function dayStat(d){
+    const log = state.wirdLog[d] || {}, tm = state.timers[d] || {}, past = d < todayStr();
+    const ms = k => tm[k] ? (past ? tm[k].ms : elapsedMs(tm[k])) : 0;
+    const keys = [...new Set([...Object.keys(log), ...Object.keys(tm).filter(k => ms(k) > 0)])]
+      .sort((a,b) => parseInt(a) - parseInt(b) || a.localeCompare(b));
+    const items = keys.map(k => ({ k, name: itemInfo(k).name, st: log[k], ms: ms(k) }));
+    const done = items.filter(i => i.st), timed = done.filter(i => i.ms > 0);
+    const plan = new Set((state.worked[d] || []).flatMap(i => DAYS[i].keys));
+    return { d, items, done: done.length,
+      nazar: done.filter(i => i.st === 'nazar').length, qalb: done.filter(i => i.st === 'qalb').length,
+      ms: items.reduce((a,i) => a + i.ms, 0), tms: timed.reduce((a,i) => a + i.ms, 0), tn: timed.length,
+      tgt: plan.size, tdone: [...plan].filter(k => log[k]).length };
+  }
+  function agg(dates){
+    const f = firstDay(), t = todayStr(), S = dates.map(dayStat);
+    const el = S.filter(s => f && s.d >= f && s.d <= t), act = el.filter(s => s.done > 0);
+    const sum = k => S.reduce((a,s) => a + s[k], 0), tn = sum('tn'), tg = S.filter(s => s.tgt);
+    return { S, el: el.length, act: act.length, done: sum('done'), nazar: sum('nazar'), qalb: sum('qalb'), ms: sum('ms'),
+      avg: tn ? sum('tms')/tn : 0, commit: pct(act.length, el.length), qp: pct(sum('qalb'), sum('done')),
+      plan: tg.length ? pct(tg.reduce((a,s) => a + s.tdone, 0), tg.reduce((a,s) => a + s.tgt, 0)) : null,
+      streak: longest(el.map(s => s.done > 0)) };
+  }
+  function analysis(a, b){
+    if (!a.el) return ['لا بيانات كافية في هذه الفترة بعد.'];
+    const o = [`الالتزام: ${ar(a.act)} من ${ar(a.el)} يومًا (${P(a.commit)}) — ${rate(a.commit)}.`];
+    if (a.plan != null) o.push(`إنجاز الورد المقرَّر في الأيام التي عملتَ عليها: ${P(a.plan)}.`);
+    if (a.done) o.push(`نسبة «عن ظهر قلب» ${P(a.qp)} من إنجازك` + (b.qp != null ? ` (${a.qp > b.qp ? 'ارتفعت' : a.qp < b.qp ? 'انخفضت' : 'ثابتة'} عن الفترة السابقة: ${P(b.qp)})` : '') + '.');
+    if (a.avg) o.push(`متوسط الوقت للسورة ${fmtMin(a.avg)}، وإجمالي الوقت ${fmtMin(a.ms)}.`);
+    if (a.streak > 1) o.push(`أطول سلسلة أيام متتالية: ${ar(a.streak)}.`);
+    if (a.el > a.act) o.push(`الأيام الفائتة بلا تسجيل: ${ar(a.el - a.act)}.`);
+    o.push(a.commit >= 85 ? 'حافظ على هذا الإيقاع، وزِد تدريجيًا نسبة «عن ظهر قلب».'
+      : a.commit >= 65 ? 'قريب من الثبات؛ حدّد وقتًا ثابتًا يوميًا لسدّ الأيام الفائتة.'
+      : a.commit >= 40 ? 'الاستمرار أهم من الكمّ: ولو سورة واحدة في اليوم الضيّق خيرٌ من تفويته.'
+      : 'ابدأ بهدف صغير تفي به كل يوم، ثم زِد تدريجيًا.');
+    return o;
+  }
+  function period(){
+    const a = reportDate;
+    if (reportType === 'd') return { dates: [a], title: `${WD[pd(a).getDay()]} ${fmtD(a)}` };
+    if (reportType === 'w') {
+      const s = sh(a, -((pd(a).getDay() - WSTART + 7) % 7)), dates = range(0,7).map(i => sh(s,i));
+      return { dates, title: `${fmtD(dates[0])} ← ${fmtD(dates[6])}` };
+    }
+    const d = pd(a);
+    return { dates: monthDates(d.getFullYear(), d.getMonth()), title: `${MN[d.getMonth()]} ${ar(d.getFullYear())}` };
+  }
+  function bodyDay(p){
+    const a = agg(p.dates), s = a.S[0], pv = agg(range(1,7).map(i => sh(s.d,-i)));
+    const stl = { qalb: 'عن ظهر قلب', nazar: 'نظرًا' };
+    const rows = s.items.map(i => `<tr><td>${i.name}</td><td>${stl[i.st] || 'لم يُسجَّل'}</td><td>${fmtMin(i.ms)}</td></tr>`).join('');
+    const o = [];
+    if (!s.done) o.push('لم يُسجَّل إنجاز في هذا اليوم.');
+    else {
+      o.push(`أنجزتَ ${ar(s.done)} سورة: ${ar(s.qalb)} عن ظهر قلب و${ar(s.nazar)} نظرًا.`);
+      if (s.tgt) o.push(`أنجزتَ ${ar(s.tdone)} من ${ar(s.tgt)} من ورد اليوم (${P(pct(s.tdone,s.tgt))}).`);
+      if (a.avg && pv.avg) o.push(`متوسط الوقت للسورة ${fmtMin(a.avg)} مقابل ${fmtMin(pv.avg)} في الأيام السبعة السابقة.`);
+    }
+    return cards([ar(s.done),'سورة منجزة'], [fmtMin(s.ms),'إجمالي الوقت'], [P(pct(s.qalb,s.done)),'عن ظهر قلب'], [s.tgt ? P(pct(s.tdone,s.tgt)) : '—','إنجاز ورد اليوم'])
+      + (rows ? `<table class="qt-rp-table"><thead><tr><th>السورة</th><th>الحالة</th><th>المدة</th></tr></thead><tbody>${rows}</tbody></table>` : '') + ul(o);
+  }
+  function bodyWeek(p){
+    const a = agg(p.dates), b = agg(p.dates.map(d => sh(d,-7))), c = b.el ? b : {}, mx = Math.max(...a.S.map(s => s.ms), 1);
+    const rows = a.S.map(s => `<tr><td>${WD[pd(s.d).getDay()]} <small>${ar(pd(s.d).getDate())}</small></td><td>${s.done ? ar(s.done) : '—'}</td><td>${s.done ? P(pct(s.qalb,s.done)) : '—'}</td><td>${fmtMin(s.ms)}${bar(s.ms,mx)}</td><td>${s.tgt ? P(pct(s.tdone,s.tgt)) : '—'}</td></tr>`).join('');
+    return cards([a.el ? `${ar(a.act)}/${ar(a.el)}` : '—', 'أيام الالتزام ' + dl(a.commit,c.commit)], [ar(a.done), 'سور منجزة ' + dl(a.done,c.done)],
+        [fmtMin(a.ms), 'إجمالي الوقت ' + dl(a.ms,c.ms)], [P(a.qp), 'عن ظهر قلب ' + dl(a.qp,c.qp)])
+      + `<table class="qt-rp-table"><thead><tr><th>اليوم</th><th>السور</th><th>قلب</th><th>الوقت</th><th>الورد</th></tr></thead><tbody>${rows}</tbody></table>`
+      + (b.el ? `<p class="qt-meta">الأسبوع السابق: ${ar(b.done)} سورة · ${fmtMin(b.ms)} · التزام ${P(b.commit)}</p>` : '')
+      + ul(analysis(a, b));
+  }
+  function bodyMonth(p){
+    const d0 = pd(p.dates[0]), a = agg(p.dates), b = agg(monthDates(d0.getFullYear(), d0.getMonth()-1)), c = b.el ? b : {};
+    const segs = [];
+    p.dates.forEach(d => { const w = sh(d, -((pd(d).getDay() - WSTART + 7) % 7)); let g = segs[segs.length-1]; if (!g || g.w !== w) segs.push(g = { w, dates: [] }); g.dates.push(d); });
+    const A = segs.map(g => agg(g.dates)), mx = Math.max(...A.map(x => x.ms), 1);
+    const rows = segs.map((g,i) => {
+      const x = A[i], q = (A[i-1] && A[i-1].el) ? A[i-1] : {};
+      return `<tr><td>${ar(i+1)} <small>${ar(pd(g.dates[0]).getDate())}–${ar(pd(g.dates[g.dates.length-1]).getDate())}</small></td><td>${x.el ? ar(x.act) + '/' + ar(x.el) : '—'} ${dl(x.commit,q.commit)}</td><td>${ar(x.done)} ${dl(x.done,q.done)}</td><td>${fmtMin(x.ms)} ${dl(x.ms,q.ms)}${bar(x.ms,mx)}</td><td>${P(x.qp)}</td></tr>`;
+    }).join('');
+    const f = firstDay(), t = todayStr();
+    const strip = a.S.map(s => `<i class="${s.done ? 'l' + (s.done > 5 ? 3 : s.done > 2 ? 2 : 1) : (f && s.d >= f && s.d <= t ? '' : 'x')}">${ar(pd(s.d).getDate())}</i>`).join('');
+    const o = analysis(a, c), ev = A.map((x,i) => ({ i, c: x.commit, n: x.el })).filter(x => x.n >= 3 && x.c != null);
+    if (ev.length > 1) {
+      const hi = ev.reduce((m,x) => x.c > m.c ? x : m), lo = ev.reduce((m,x) => x.c < m.c ? x : m);
+      if (hi.c !== lo.c) o.splice(o.length-1, 0, `أقوى الأسابيع التزامًا: الأسبوع ${ar(hi.i+1)} (${P(hi.c)})، وأضعفها: الأسبوع ${ar(lo.i+1)} (${P(lo.c)}).`);
+    }
+    return cards([a.el ? `${ar(a.act)}/${ar(a.el)}` : '—', 'أيام الالتزام ' + dl(a.commit,c.commit)], [ar(a.done), 'سور منجزة ' + dl(a.done,c.done)],
+        [fmtMin(a.ms), 'إجمالي الوقت ' + dl(a.ms,c.ms)], [P(a.qp), 'عن ظهر قلب ' + dl(a.qp,c.qp)])
+      + `<p class="qt-section-label">خريطة الالتزام اليومي (الأغمق = سور أكثر)</p><div class="qt-rp-strip">${strip}</div>`
+      + `<p class="qt-section-label">مقارنة أسابيع الشهر</p><table class="qt-rp-table"><thead><tr><th>الأسبوع</th><th>الالتزام</th><th>السور</th><th>الوقت</th><th>قلب</th></tr></thead><tbody>${rows}</tbody></table>`
+      + ul(o);
+  }
+  const reportBody = p => reportType === 'd' ? bodyDay(p) : reportType === 'w' ? bodyWeek(p) : bodyMonth(p);
+  function renderReports(){
+    const p = period(), t = todayStr();
+    const seg = [['d','يومي'],['w','أسبوعي'],['m','شهري']].map(([k,l]) => `<button class="qt-mode-btn ${reportType===k?'active':''}" data-rp-type="${k}">${l}</button>`).join('');
+    const nav = `<div class="qt-cycle-bar"><button class="qt-cycle-edit" data-rp-nav="-1">▶ السابق</button><span class="qt-cycle-info"><b>${p.title}</b></span><button class="qt-cycle-edit" data-rp-nav="1" ${(p.dates.includes(t) || p.dates[0] > t) ? 'disabled' : ''}>التالي ◀</button></div>`;
+    return `<div class="qt-mode-bar">${seg}</div>${nav}<div class="qt-print-bar" style="display:flex;gap:8px"><button class="qt-btn qt-btn-ghost" id="qt-rp-print">🖨️ طباعة / حفظ PDF</button><button class="qt-btn qt-btn-ghost" data-rp-nav="0">الفترة الحالية</button></div>${reportBody(p)}`;
+  }
+  function renderReportPrint(){
+    const p = period(), nm = { d: 'اليومي', w: 'الأسبوعي', m: 'الشهري' }[reportType];
+    return `<div class="qt-rp-head"><h2>ثبات الحفظ — التقرير ${nm}</h2><div>${p.title}</div><small>طُبع في ${fmtD(todayStr())}</small></div>${reportBody(p)}`;
+  }
+  function noteWorked(t){
+    const i = realDayIndex(state.wirdMode, activeCycleDay);
+    state.worked[t] = state.worked[t] || [];
+    if (!state.worked[t].includes(i)) state.worked[t].push(i);
+  }
+
   function render(){
     renderTabs();
-    document.getElementById('qt-print-view').innerHTML = renderPrintView();
+    document.getElementById('qt-print-view').innerHTML = activeTab === 'reports' ? renderReportPrint() : renderPrintView();
     const body = document.getElementById('qt-body');
     if (activeTab === 'classify') body.innerHTML = renderClassify();
     else if (activeTab === 'wird') body.innerHTML = renderWird();
+    else if (activeTab === 'reports') body.innerHTML = renderReports();
     else if (activeTab === 'tathbit') body.innerHTML = renderTathbit();
     else if (activeTab === 'spaced') body.innerHTML = renderSpaced();
     else body.innerHTML = renderAbout();
@@ -622,7 +791,7 @@ body{
         if (tm.since) pauseTimer(t, k);
         else {
           Object.keys(state.timers[t]).forEach(o => pauseTimer(t, o)); // مؤقّت واحد يعمل في كل مرة
-          tm.since = Date.now();
+          tm.since = Date.now(); noteWorked(t);
         }
       }
       saveState(); render();
@@ -631,9 +800,20 @@ body{
       const id = b.dataset.wirdId; const status = b.dataset.status; const t = todayStr();
       state.wirdLog[t] = state.wirdLog[t] || {};
       state.wirdLog[t][id] = (state.wirdLog[t][id] === status) ? undefined : status;
-      if (!state.wirdLog[t][id]) delete state.wirdLog[t][id]; else pauseTimer(t, id); // تسجيل الإنجاز يوقف المؤقّت
+      if (!state.wirdLog[t][id]) delete state.wirdLog[t][id]; else { pauseTimer(t, id); noteWorked(t); } // تسجيل الإنجاز يوقف المؤقّت
       saveState(); render();
     });
+    document.querySelectorAll('[data-rp-type]').forEach(b => b.onclick = () => { reportType = b.dataset.rpType; render(); });
+    document.querySelectorAll('[data-rp-nav]').forEach(b => b.onclick = () => {
+      const n = Number(b.dataset.rpNav);
+      if (!n) reportDate = todayStr();
+      else if (reportType === 'd') reportDate = sh(reportDate, n);
+      else if (reportType === 'w') reportDate = sh(reportDate, 7*n);
+      else { const d = pd(reportDate); reportDate = ymd(new Date(d.getFullYear(), d.getMonth()+n, 1)); }
+      render();
+    });
+    const rpPrint = document.getElementById('qt-rp-print');
+    if (rpPrint) rpPrint.onclick = () => window.print();
     const printBtn = document.getElementById('qt-print-btn');
     if (printBtn) printBtn.onclick = () => window.print();
     const editBtn = document.getElementById('qt-edit-cycle');
