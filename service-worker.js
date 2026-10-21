@@ -1,4 +1,4 @@
-const CACHE_NAME = 'thabat-al-hifz-v5';
+const CACHE_NAME = 'thabat-al-hifz-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -26,6 +26,13 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  if (event.request.mode === 'navigate') { // الصفحة الرئيسية: الشبكة أولًا حتى تصل التحديثات
+    event.respondWith(
+      fetch(event.request).then((r) => { const c = r.clone(); caches.open(CACHE_NAME).then((k) => k.put(event.request, c)); return r; })
+        .catch(() => caches.match(event.request).then((m) => m || caches.match('./index.html')))
+    );
+    return;
+  }
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;

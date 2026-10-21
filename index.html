@@ -633,7 +633,7 @@ body{
   const rate = p => p == null ? '' : p >= 85 ? 'ممتاز' : p >= 65 ? 'جيد' : p >= 40 ? 'متوسط' : 'يحتاج إلى مضاعفة العزم';
   const dl = (c,p) => (p == null || c == null) ? '' : c > p ? '<b class="qt-up">▲</b>' : c < p ? '<b class="qt-dn">▼</b>' : '<b>＝</b>';
   const bar = (v,mx) => `<div class="qt-rp-bar"><i style="width:${mx ? Math.round(v/mx*100) : 0}%;background:var(--gold)"></i></div>`;
-  const cards = c => `<div class="qt-rp-cards">${c.map(([v,l]) => `<div class="qt-rp-card"><b>${v}</b><small>${l}</small></div>`).join('')}</div>`;
+  const cards = (...c) => `<div class="qt-rp-cards">${c.map(([v,l]) => `<div class="qt-rp-card"><b>${v}</b><small>${l}</small></div>`).join('')}</div>`;
   const ul = o => `<div class="qt-rp-an"><ul>${o.map(x => `<li>${x}</li>`).join('')}</ul></div>`;
   function fmtMin(ms){
     if (ms <= 0) return '—';
