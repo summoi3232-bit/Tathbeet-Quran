@@ -138,7 +138,6 @@ body{
 .qt-rp-table th{color:var(--text-faint);font-weight:500;font-size:11px}
 .qt-rp-table small{color:var(--text-faint)}
 .qt-rp-table tr{break-inside:avoid}
-.qt-rp-table tfoot td{font-weight:700;color:var(--gold);border-top:2px solid var(--border);border-bottom:none}
 .qt-rp-bar{height:6px;background:var(--surface3);border-radius:3px;overflow:hidden;margin-top:3px}
 .qt-rp-bar i{display:block;height:100%}
 .qt-rp-an{background:var(--surface2);border-right:3px solid var(--gold);border-radius:8px;padding:10px 14px;margin:10px 0}
@@ -266,6 +265,39 @@ body{
 
   const STAGES = ["حفظ المقاطع","ربط المقاطع","سرد متصل"];
   const INTERVALS = [1, 3, 7, 14, 30]; // days
+  // ===== التكرار المتباعد: SM-2 + سلّم البداية 1-3-7 =====
+  // المراجعات الأولى بفواصل ثابتة (SRS_START)، ثم الفاصل = السابق × معامل السهولة (ef) الخاص بكل سورة.
+  // ef يبدأ 2.5 ولا ينزل عن 1.3، ويتعدّل بعد كل مراجعة بحسب جودة التذكر q (1 نسيت، 3 صعب، 4 جيد، 5 سهل).
+  const SRS_START = [1, 3, 7], SRS_EF0 = 2.5, SRS_EFMIN = 1.3, SRS_MAX = 90;
+  const GRADES = [
+    { q:1, label:'نسيت',  cls:'qt-btn-ghost'   },
+    { q:3, label:'صعب',   cls:'qt-btn-ghost'   },
+    { q:4, label:'جيد',   cls:'qt-btn-primary' },
+    { q:5, label:'سهل',   cls:'qt-btn-ghost'   }
+  ];
+  function srsNew(){
+    return { reps:0, interval:SRS_START[0], ef:SRS_EF0, lapses:0, stage:0, last:todayStr(), nextDate:addDays(new Date(), SRS_START[0]) };
+  }
+  // ترحيل الصيغة القديمة {stage,nextDate} إلى الصيغة الجديدة دون فقدان التقدّم
+  function srsGet(id){
+    const c = state.spaced[id];
+    if (c && c.ef === undefined) {
+      const st = Math.min(c.stage || 0, INTERVALS.length - 1);
+      c.reps = st; c.interval = INTERVALS[st]; c.ef = SRS_EF0; c.lapses = 0;
+    }
+    return c;
+  }
+  function srsReview(c, q){
+    let reps = c.reps, interval = c.interval, lapses = c.lapses || 0;
+    if (q < 3) { reps = 0; interval = 1; lapses++; }
+    else {
+      reps++;
+      interval = reps < SRS_START.length ? SRS_START[reps] : Math.max(interval + 1, Math.round(interval * c.ef));
+    }
+    interval = Math.min(interval, SRS_MAX);
+    const ef = Math.max(SRS_EFMIN, c.ef + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)));
+    return { reps, interval, ef:Math.round(ef*100)/100, lapses, stage:Math.min(reps, INTERVALS.length-1), last:todayStr(), nextDate:addDays(new Date(), interval) };
+  }
   const STORAGE_KEY = 'thabat-al-hifz-state';
   const MS_DAY = 86400000;
   const ymd = dt => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
@@ -550,24 +582,25 @@ body{
   }
 
   function renderSpaced(){
-    const entries = Object.keys(state.spaced).map(id => ({ id: Number(id), ...state.spaced[id] }));
+    const entries = Object.keys(state.spaced).map(id => ({ id: Number(id), ...srsGet(id) }));
     if (entries.length === 0) return `<div class="qt-empty">لا سور في دورة التكرار المتباعد بعد. أكمل تثبيت سورة أولاً.</div>`;
     entries.sort((a,b) => a.nextDate.localeCompare(b.nextDate));
     const today = todayStr();
-    return `<p class="qt-section-label">راجع السور المستحقة، الفترة تكبر كل مرة تنجح فيها</p>` +
+    const dueN = entries.filter(e => e.nextDate <= today).length;
+    return `<p class="qt-section-label">${dueN ? `مستحق اليوم: ${ar(dueN)} من ${ar(entries.length)}` : 'لا مراجعات مستحقة اليوم'} — قيّم تذكّرك بصدق، فالفاصل القادم يعتمد عليه</p>` +
       entries.map(e => {
         const s = SURAHS.find(x => x.id === e.id);
         const due = e.nextDate <= today;
-        const stageLabel = `${INTERVALS[e.stage]} يوم`;
+        const late = due ? Math.round((new Date(today) - new Date(e.nextDate)) / MS_DAY) : 0;
+        const meta = `الفاصل الحالي: ${ar(e.interval)} يوم · مراجعات ناجحة متتالية: ${ar(e.reps)}${e.lapses ? ` · نسيان: ${ar(e.lapses)}` : ''}${late ? ` · متأخرة ${ar(late)} يوم` : ''}`;
         return `<div class="qt-card ${due?'due':''}">
           <div class="qt-card-top">
             <span class="qt-name">${s.name}</span>
             <span class="qt-badge ${due?'due':''}">${due ? 'مستحقة اليوم' : e.nextDate}</span>
           </div>
-          <p class="qt-meta">المرحلة الحالية: كل ${stageLabel}</p>
+          <p class="qt-meta">${meta}</p>
           <div class="qt-actions">
-            <button class="qt-btn qt-btn-primary" data-passed="${e.id}">تمت المراجعة بلا خطأ</button>
-            <button class="qt-btn qt-btn-ghost" data-failed="${e.id}">أخطأت، أعِد الفترة</button>
+            ${GRADES.map(g => `<button class="qt-btn ${g.cls}" data-grade="${g.q}" data-sid="${e.id}">${g.label}</button>`).join('')}
           </div>
         </div>`;
       }).join('');
@@ -612,7 +645,14 @@ body{
 
       <div class="qt-about-card">
         <div class="qt-about-head"><span class="qt-about-num">4</span><h3>التكرار المتباعد</h3></div>
-        <p>بعد إتمام التثبيت، تدخل السورة دورة مراجعة بفواصل زمنية متزايدة: يوم، ثم 3 أيام، ثم أسبوع، ثم أسبوعين، ثم شهر. كل مراجعة ناجحة بلا خطأ تُبعّد الفاصل التالي، وكل خطأ يُقرّبه من جديد.</p>
+        <p>بعد إتمام التثبيت، تدخل السورة دورة مراجعة بفواصل متزايدة. المراجعات الأولى ثابتة: يوم، ثم 3 أيام، ثم 7 أيام. بعدها يُحسب الفاصل التالي بضرب الفاصل الحالي في «معامل سهولة» خاص بكل سورة (يبدأ 2.5 وأدناه 1.3)، وأقصى فاصل 90 يومًا.</p>
+        <ul class="qt-about-list">
+          <li><strong>نسيت:</strong> تعود السورة إلى يوم واحد وتبدأ السلّم من جديد، ويقلّ معامل سهولتها كثيرًا</li>
+          <li><strong>صعب:</strong> تُحسب مراجعة ناجحة، لكن معامل السهولة ينقص قليلًا فيقصر الفاصل لاحقًا</li>
+          <li><strong>جيد:</strong> يبقى المعامل كما هو</li>
+          <li><strong>سهل:</strong> يزيد المعامل فتطول الفواصل القادمة</li>
+        </ul>
+        <p>الأساس العلمي: أثر التباعد (Cepeda وزملاؤه 2006، 2008) — الفاصل الأمثل يزداد كلما طالت المدة المطلوب حفظ المادة فيها، وتقييم الممارسة الموزعة بأنها عالية الفائدة (Dunlosky وزملاؤه 2013). أرقام الفواصل تقريبية، وتحتاج ضبطًا بحسب تجربتك.</p>
       </div>
 
       <div class="qt-about-card">
@@ -633,7 +673,7 @@ body{
   const rate = p => p == null ? '' : p >= 85 ? 'ممتاز' : p >= 65 ? 'جيد' : p >= 40 ? 'متوسط' : 'يحتاج إلى مضاعفة العزم';
   const dl = (c,p) => (p == null || c == null) ? '' : c > p ? '<b class="qt-up">▲</b>' : c < p ? '<b class="qt-dn">▼</b>' : '<b>＝</b>';
   const bar = (v,mx) => `<div class="qt-rp-bar"><i style="width:${mx ? Math.round(v/mx*100) : 0}%;background:var(--gold)"></i></div>`;
-  const cards = (...c) => `<div class="qt-rp-cards">${c.map(([v,l]) => `<div class="qt-rp-card"><b>${v}</b><small>${l}</small></div>`).join('')}</div>`;
+  const cards = c => `<div class="qt-rp-cards">${c.map(([v,l]) => `<div class="qt-rp-card"><b>${v}</b><small>${l}</small></div>`).join('')}</div>`;
   const ul = o => `<div class="qt-rp-an"><ul>${o.map(x => `<li>${x}</li>`).join('')}</ul></div>`;
   function fmtMin(ms){
     if (ms <= 0) return '—';
@@ -704,14 +744,14 @@ body{
       if (a.avg && pv.avg) o.push(`متوسط الوقت للسورة ${fmtMin(a.avg)} مقابل ${fmtMin(pv.avg)} في الأيام السبعة السابقة.`);
     }
     return cards([ar(s.done),'سورة منجزة'], [fmtMin(s.ms),'إجمالي الوقت'], [P(pct(s.qalb,s.done)),'عن ظهر قلب'], [s.tgt ? P(pct(s.tdone,s.tgt)) : '—','إنجاز ورد اليوم'])
-      + (rows ? `<table class="qt-rp-table"><thead><tr><th>السورة</th><th>الحالة</th><th>المدة</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td>المجموع</td><td>${ar(s.done)} سورة</td><td>${fmtMin(s.ms)}</td></tr></tfoot></table>` : '') + ul(o);
+      + (rows ? `<table class="qt-rp-table"><thead><tr><th>السورة</th><th>الحالة</th><th>المدة</th></tr></thead><tbody>${rows}</tbody></table>` : '') + ul(o);
   }
   function bodyWeek(p){
     const a = agg(p.dates), b = agg(p.dates.map(d => sh(d,-7))), c = b.el ? b : {}, mx = Math.max(...a.S.map(s => s.ms), 1);
     const rows = a.S.map(s => `<tr><td>${WD[pd(s.d).getDay()]} <small>${ar(pd(s.d).getDate())}</small></td><td>${s.done ? ar(s.done) : '—'}</td><td>${s.done ? P(pct(s.qalb,s.done)) : '—'}</td><td>${fmtMin(s.ms)}${bar(s.ms,mx)}</td><td>${s.tgt ? P(pct(s.tdone,s.tgt)) : '—'}</td></tr>`).join('');
     return cards([a.el ? `${ar(a.act)}/${ar(a.el)}` : '—', 'أيام الالتزام ' + dl(a.commit,c.commit)], [ar(a.done), 'سور منجزة ' + dl(a.done,c.done)],
         [fmtMin(a.ms), 'إجمالي الوقت ' + dl(a.ms,c.ms)], [P(a.qp), 'عن ظهر قلب ' + dl(a.qp,c.qp)])
-      + `<table class="qt-rp-table"><thead><tr><th>اليوم</th><th>السور</th><th>قلب</th><th>الوقت</th><th>الورد</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td>المجموع</td><td>${ar(a.done)}</td><td>${P(a.qp)}</td><td>${fmtMin(a.ms)}</td><td>${P(a.plan)}</td></tr></tfoot></table>`
+      + `<table class="qt-rp-table"><thead><tr><th>اليوم</th><th>السور</th><th>قلب</th><th>الوقت</th><th>الورد</th></tr></thead><tbody>${rows}</tbody></table>`
       + (b.el ? `<p class="qt-meta">الأسبوع السابق: ${ar(b.done)} سورة · ${fmtMin(b.ms)} · التزام ${P(b.commit)}</p>` : '')
       + ul(analysis(a, b));
   }
@@ -734,7 +774,7 @@ body{
     return cards([a.el ? `${ar(a.act)}/${ar(a.el)}` : '—', 'أيام الالتزام ' + dl(a.commit,c.commit)], [ar(a.done), 'سور منجزة ' + dl(a.done,c.done)],
         [fmtMin(a.ms), 'إجمالي الوقت ' + dl(a.ms,c.ms)], [P(a.qp), 'عن ظهر قلب ' + dl(a.qp,c.qp)])
       + `<p class="qt-section-label">خريطة الالتزام اليومي (الأغمق = سور أكثر)</p><div class="qt-rp-strip">${strip}</div>`
-      + `<p class="qt-section-label">مقارنة أسابيع الشهر</p><table class="qt-rp-table"><thead><tr><th>الأسبوع</th><th>الالتزام</th><th>السور</th><th>الوقت</th><th>قلب</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td>المجموع</td><td>${a.el ? ar(a.act) + '/' + ar(a.el) : '—'}</td><td>${ar(a.done)}</td><td>${fmtMin(a.ms)}</td><td>${P(a.qp)}</td></tr></tfoot></table>`
+      + `<p class="qt-section-label">مقارنة أسابيع الشهر</p><table class="qt-rp-table"><thead><tr><th>الأسبوع</th><th>الالتزام</th><th>السور</th><th>الوقت</th><th>قلب</th></tr></thead><tbody>${rows}</tbody></table>`
       + ul(o);
   }
   const reportBody = p => reportType === 'd' ? bodyDay(p) : reportType === 'w' ? bodyWeek(p) : bodyMonth(p);
@@ -837,22 +877,14 @@ body{
     });
     document.querySelectorAll('[data-finish]').forEach(b => b.onclick = () => {
       const id = b.dataset.finish;
-      state.spaced[id] = { stage: 0, nextDate: addDays(new Date(), INTERVALS[0]) };
+      state.spaced[id] = srsNew();
       delete state.tathbit[id];
       saveState(); render();
     });
-    document.querySelectorAll('[data-passed]').forEach(b => b.onclick = () => {
-      const id = b.dataset.passed;
-      const cur = state.spaced[id];
-      const nextStage = Math.min(cur.stage + 1, INTERVALS.length - 1);
-      state.spaced[id] = { stage: nextStage, nextDate: addDays(new Date(), INTERVALS[nextStage]) };
-      saveState(); render();
-    });
-    document.querySelectorAll('[data-failed]').forEach(b => b.onclick = () => {
-      const id = b.dataset.failed;
-      const cur = state.spaced[id];
-      const prevStage = Math.max(cur.stage - 1, 0);
-      state.spaced[id] = { stage: prevStage, nextDate: addDays(new Date(), INTERVALS[prevStage]) };
+    document.querySelectorAll('[data-grade]').forEach(b => b.onclick = () => {
+      const id = b.dataset.sid, cur = srsGet(id);
+      if (!cur) return;
+      state.spaced[id] = srsReview(cur, Number(b.dataset.grade));
       saveState(); render();
     });
   }
