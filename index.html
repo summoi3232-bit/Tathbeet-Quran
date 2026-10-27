@@ -138,6 +138,7 @@ body{
 .qt-rp-table th{color:var(--text-faint);font-weight:500;font-size:11px}
 .qt-rp-table small{color:var(--text-faint)}
 .qt-rp-table tr{break-inside:avoid}
+.qt-rp-table tfoot td{font-weight:700;color:var(--gold);border-top:2px solid var(--border);border-bottom:none}
 .qt-rp-bar{height:6px;background:var(--surface3);border-radius:3px;overflow:hidden;margin-top:3px}
 .qt-rp-bar i{display:block;height:100%}
 .qt-rp-an{background:var(--surface2);border-right:3px solid var(--gold);border-radius:8px;padding:10px 14px;margin:10px 0}
@@ -673,7 +674,7 @@ body{
   const rate = p => p == null ? '' : p >= 85 ? 'ممتاز' : p >= 65 ? 'جيد' : p >= 40 ? 'متوسط' : 'يحتاج إلى مضاعفة العزم';
   const dl = (c,p) => (p == null || c == null) ? '' : c > p ? '<b class="qt-up">▲</b>' : c < p ? '<b class="qt-dn">▼</b>' : '<b>＝</b>';
   const bar = (v,mx) => `<div class="qt-rp-bar"><i style="width:${mx ? Math.round(v/mx*100) : 0}%;background:var(--gold)"></i></div>`;
-  const cards = c => `<div class="qt-rp-cards">${c.map(([v,l]) => `<div class="qt-rp-card"><b>${v}</b><small>${l}</small></div>`).join('')}</div>`;
+  const cards = (...c) => `<div class="qt-rp-cards">${c.map(([v,l]) => `<div class="qt-rp-card"><b>${v}</b><small>${l}</small></div>`).join('')}</div>`;
   const ul = o => `<div class="qt-rp-an"><ul>${o.map(x => `<li>${x}</li>`).join('')}</ul></div>`;
   function fmtMin(ms){
     if (ms <= 0) return '—';
@@ -744,14 +745,14 @@ body{
       if (a.avg && pv.avg) o.push(`متوسط الوقت للسورة ${fmtMin(a.avg)} مقابل ${fmtMin(pv.avg)} في الأيام السبعة السابقة.`);
     }
     return cards([ar(s.done),'سورة منجزة'], [fmtMin(s.ms),'إجمالي الوقت'], [P(pct(s.qalb,s.done)),'عن ظهر قلب'], [s.tgt ? P(pct(s.tdone,s.tgt)) : '—','إنجاز ورد اليوم'])
-      + (rows ? `<table class="qt-rp-table"><thead><tr><th>السورة</th><th>الحالة</th><th>المدة</th></tr></thead><tbody>${rows}</tbody></table>` : '') + ul(o);
+      + (rows ? `<table class="qt-rp-table"><thead><tr><th>السورة</th><th>الحالة</th><th>المدة</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td>المجموع</td><td>${ar(s.done)} سورة</td><td>${fmtMin(s.ms)}</td></tr></tfoot></table>` : '') + ul(o);
   }
   function bodyWeek(p){
     const a = agg(p.dates), b = agg(p.dates.map(d => sh(d,-7))), c = b.el ? b : {}, mx = Math.max(...a.S.map(s => s.ms), 1);
     const rows = a.S.map(s => `<tr><td>${WD[pd(s.d).getDay()]} <small>${ar(pd(s.d).getDate())}</small></td><td>${s.done ? ar(s.done) : '—'}</td><td>${s.done ? P(pct(s.qalb,s.done)) : '—'}</td><td>${fmtMin(s.ms)}${bar(s.ms,mx)}</td><td>${s.tgt ? P(pct(s.tdone,s.tgt)) : '—'}</td></tr>`).join('');
     return cards([a.el ? `${ar(a.act)}/${ar(a.el)}` : '—', 'أيام الالتزام ' + dl(a.commit,c.commit)], [ar(a.done), 'سور منجزة ' + dl(a.done,c.done)],
         [fmtMin(a.ms), 'إجمالي الوقت ' + dl(a.ms,c.ms)], [P(a.qp), 'عن ظهر قلب ' + dl(a.qp,c.qp)])
-      + `<table class="qt-rp-table"><thead><tr><th>اليوم</th><th>السور</th><th>قلب</th><th>الوقت</th><th>الورد</th></tr></thead><tbody>${rows}</tbody></table>`
+      + `<table class="qt-rp-table"><thead><tr><th>اليوم</th><th>السور</th><th>قلب</th><th>الوقت</th><th>الورد</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td>المجموع</td><td>${ar(a.done)}</td><td>${P(a.qp)}</td><td>${fmtMin(a.ms)}</td><td>${P(a.plan)}</td></tr></tfoot></table>`
       + (b.el ? `<p class="qt-meta">الأسبوع السابق: ${ar(b.done)} سورة · ${fmtMin(b.ms)} · التزام ${P(b.commit)}</p>` : '')
       + ul(analysis(a, b));
   }
@@ -774,7 +775,7 @@ body{
     return cards([a.el ? `${ar(a.act)}/${ar(a.el)}` : '—', 'أيام الالتزام ' + dl(a.commit,c.commit)], [ar(a.done), 'سور منجزة ' + dl(a.done,c.done)],
         [fmtMin(a.ms), 'إجمالي الوقت ' + dl(a.ms,c.ms)], [P(a.qp), 'عن ظهر قلب ' + dl(a.qp,c.qp)])
       + `<p class="qt-section-label">خريطة الالتزام اليومي (الأغمق = سور أكثر)</p><div class="qt-rp-strip">${strip}</div>`
-      + `<p class="qt-section-label">مقارنة أسابيع الشهر</p><table class="qt-rp-table"><thead><tr><th>الأسبوع</th><th>الالتزام</th><th>السور</th><th>الوقت</th><th>قلب</th></tr></thead><tbody>${rows}</tbody></table>`
+      + `<p class="qt-section-label">مقارنة أسابيع الشهر</p><table class="qt-rp-table"><thead><tr><th>الأسبوع</th><th>الالتزام</th><th>السور</th><th>الوقت</th><th>قلب</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td>المجموع</td><td>${a.el ? ar(a.act) + '/' + ar(a.el) : '—'}</td><td>${ar(a.done)}</td><td>${fmtMin(a.ms)}</td><td>${P(a.qp)}</td></tr></tfoot></table>`
       + ul(o);
   }
   const reportBody = p => reportType === 'd' ? bodyDay(p) : reportType === 'w' ? bodyWeek(p) : bodyMonth(p);
